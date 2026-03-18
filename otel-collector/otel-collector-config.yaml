@@ -17,7 +17,7 @@ exporters:
     send_timestamps: true
     namespace: otel
 
-  otlp_http/loki:
+  otlphttp/loki:
     endpoint: "http://loki:3100/otlp"
     tls:
       insecure: true
@@ -53,4 +53,4 @@ service:
     logs:
       receivers: [otlp]
       processors: [memory_limiter, batch]
-      exporters: [otlp_http/loki, debug]
+      exporters: [otlphttp/loki, debug]
