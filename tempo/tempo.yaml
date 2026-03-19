@@ -25,7 +25,6 @@ storage:
 
 querier:
   max_concurrent_queries: 10
-  poll_interval: 15s
 
 compactor:
   compaction:
