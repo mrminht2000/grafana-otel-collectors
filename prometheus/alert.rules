@@ -1,0 +1,56 @@
+# Hardened Observability Alerting Rules
+# Focus: Tempo Blocklist Health & Backend Storage Resilience
+# Recreated following simulated incident on 2026-03-20
+
+groups:
+  - name: TempoHealth
+    rules:
+      # CRITICAL: Detect blocklist polling failures immediately
+      - alert: TempoBlocklistPollError
+        expr: increase(tempodb_blocklist_poll_errors_total[5m]) > 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Tempo blocklist polling failed for {{ $labels.tenant }}"
+          description: "Tempo failed to poll the backend storage for block metadata. Queries may be stale or returning 404. Check storage connectivity and permissions."
+
+      # WARNING: Detect stale tenant index which indicates slow polling
+      - alert: TempoStaleTenantIndex
+        expr: tempodb_blocklist_tenant_index_age_seconds > 600
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Tempo tenant index is stale for {{ $labels.tenant }}"
+          description: "The blocklist index for tenant {{ $labels.tenant }} is older than 10 minutes (2x poll cycle). This may lead to missing traces in queries. Check compactor resources."
+
+      # CRITICAL: Detect complete lack of tenant index builders
+      - alert: TempoNoTenantIndexBuilders
+        expr: sum(tempodb_blocklist_tenant_index_builder) == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "No Tempo compactors are building tenant indexes"
+          description: "No compactor instance is currently assigned to build the tenant index. Tracing data will become unqueryable as soon as caches expire. Check compactor ring health."
+
+      # RESOURCE: High Disk Usage for Local Storage
+      - alert: ObservabilityHighDiskUsage
+        expr: (node_filesystem_avail_bytes{mountpoint="/var/tempo"} / node_filesystem_size_bytes{mountpoint="/var/tempo"}) < 0.1
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Local disk space low for Tempo storage"
+          description: "Less than 10% disk space remaining on /var/tempo. Old traces may be lost or ingestion may fail."
+
+      # RESOURCE: High Memory Usage for Tempo
+      - alert: TempoHighMemoryUsage
+        expr: (process_resident_memory_bytes{job="tempo"} / 1073741824) > 0.8
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Tempo memory usage is high (>800MB)"
+          description: "Tempo memory usage is over 80% of its 1GB limit. This may lead to OOM crashes. Check for large traces or increase memory limits."

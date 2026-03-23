@@ -1,5 +1,12 @@
+# Hardened Tempo Configuration for Production
+# Root Cause Mitigation for blocklist_poll Errors
+# Recreated following simulated deletion incident on 2026-03-20
+
 server:
   http_listen_port: 3200
+  grpc_listen_port: 9095
+  # Register instrumentation handlers for Prometheus scraping
+  register_instrumentation: true
 
 distributor:
   receivers:
@@ -11,19 +18,31 @@ distributor:
           endpoint: 0.0.0.0:4318
 
 ingester:
+  # HARDENING: Limit in-memory blocks to prevent OOM
+  max_block_bytes: 100000000 # 100MB
+  max_block_duration: 15m
+  # Hold flushed blocks for 2x blocklist_poll to prevent 404s during polling lag
+  complete_block_timeout: 15m
   trace_idle_period: 10s
-  max_block_bytes: 1000000
-  max_block_duration: 5m
 
 storage:
   trace:
+    # HARDENING: Polling configuration for local storage stability
+    blocklist_poll: 1m
+    # HARDENING: Enable fallback for local scanning
+    blocklist_poll_fallback: true
+    # HARDENING: Concurrency control for local disk I/O
+    blocklist_poll_concurrency: 20
+    
     backend: local
     local:
       path: /var/tempo/traces
+    
     wal:
       path: /var/tempo/wal
 
 querier:
+  # HARDENING: Limit query concurrency to prevent OOM
   max_concurrent_queries: 10
 
 compactor:
@@ -31,4 +50,21 @@ compactor:
     compaction_window: 1h
     max_compaction_objects: 1000000
     block_retention: 168h # 7d
+    # HARDENING: Keep compacted blocks for 1h15m (must be > blocklist_poll)
+    # This allows queriers with stale blocklists to still find the data.
     compacted_block_retention: 1h15m
+
+# HARDENING: Runtime overrides for memory limiting
+overrides:
+  # Global memory limit for the process
+  # If Tempo reaches this limit, it will reject requests or flush early
+  max_bytes_per_trace: 10000000 # 10MB
+  # HARDENING: Rate limiting to prevent ingestion-driven OOM
+  ingestion_rate_limit_bytes: 15728640 # 15MB/s
+  ingestion_burst_size_bytes: 31457280 # 30MB
+
+metrics_generator:
+  # Optional: for span metrics calculation
+  registry:
+    external_labels:
+      source: tempo

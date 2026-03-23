@@ -1,7 +1,13 @@
+# Hardened OpenTelemetry Collector Configuration
+# Root Cause Mitigation for Observability Invisibility
+# Recreated following simulated incident on 2026-03-20
 
 extensions:
   health_check:
     endpoint: 0.0.0.0:13133
+  # HARDENING: Add zpages for internal state debugging
+  zpages:
+    endpoint: 0.0.0.0:55679
 
 receivers:
   otlp:
@@ -9,48 +15,72 @@ receivers:
       grpc:
         endpoint: 0.0.0.0:4317
       http:
+        # Enable OTLP/HTTP for legacy or web clients
         endpoint: 0.0.0.0:4318
 
 exporters:
+  # HARDENING: Prometheus exporter for metrics scraping
   prometheus:
     endpoint: "0.0.0.0:8889"
     send_timestamps: true
     namespace: otel
 
+  # HARDENING: Export logs to Loki with retries
   otlphttp/loki:
     endpoint: "http://loki:3100/otlp"
     tls:
       insecure: true
+    retry_on_failure:
+      enabled: true
+      initial_interval: 5s
+      max_interval: 30s
+      max_elapsed_time: 300s
 
+  # HARDENING: Export traces to Tempo with retries
   otlp/tempo:
     endpoint: "tempo:4317"
     tls:
       insecure: true
+    retry_on_failure:
+      enabled: true
+      initial_interval: 5s
+      max_interval: 30s
+      max_elapsed_time: 300s
 
   debug:
     verbosity: basic
 
 processors:
+  # HARDENING: Batching for efficient data transmission
   batch:
     send_batch_size: 1000
     timeout: 10s
+    send_batch_max_size: 2000
+
+  # HARDENING: Memory protection for high-volume financial data
   memory_limiter:
     check_interval: 1s
     limit_percentage: 80
     spike_limit_percentage: 25
 
+  # HARDENING: Add resource detection for context
+  resourcedetection:
+    detectors: [env, system]
+    timeout: 2s
+    override: false
+
 service:
-  extensions: [health_check]
+  extensions: [health_check, zpages]
   pipelines:
     traces:
       receivers: [otlp]
-      processors: [memory_limiter, batch]
+      processors: [resourcedetection, memory_limiter, batch]
       exporters: [otlp/tempo, debug]
     metrics:
       receivers: [otlp]
-      processors: [memory_limiter, batch]
+      processors: [resourcedetection, memory_limiter, batch]
       exporters: [prometheus, debug]
     logs:
       receivers: [otlp]
-      processors: [memory_limiter, batch]
+      processors: [resourcedetection, memory_limiter, batch]
       exporters: [otlphttp/loki, debug]
