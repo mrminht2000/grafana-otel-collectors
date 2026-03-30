@@ -49,7 +49,7 @@ compactor:
   compaction:
     compaction_window: 1h
     max_compaction_objects: 1000000
-    block_retention: 168h # 7d
+    block_retention: 48h # 2d
     # HARDENING: Keep compacted blocks for 1h15m (must be > blocklist_poll)
     # This allows queriers with stale blocklists to still find the data.
     compacted_block_retention: 1h15m
